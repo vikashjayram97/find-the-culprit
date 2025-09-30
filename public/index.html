@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Find the Culprit</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Find the Culprit 🎭</h1>
+
+      <!-- Join Screen -->
+      <div id="join-screen">
+        <input type="text" id="username" placeholder="Enter your name" />
+        <button id="joinBtn">Join Game</button>
+      </div>
+
+      <!-- Game Screen -->
+      <div id="game-area" class="hidden">
+        <h2 id="word-display">Waiting for game to start...</h2>
+
+        <div id="description-section" class="hidden">
+          <textarea
+            id="description"
+            placeholder="Enter your description"
+          ></textarea>
+          <button id="submitDescBtn">Submit</button>
+        </div>
+
+        <div id="all-descriptions" class="hidden">
+          <h3>Players' Descriptions:</h3>
+          <div id="descriptions-list"></div>
+        </div>
+
+        <div id="voting-section" class="hidden">
+          <h3>Vote the Culprit:</h3>
+          <div id="players-list"></div>
+          <button class="skip-btn" id="skipVoteBtn">Skip Vote</button>
+        </div>
+
+        <div id="results" class="hidden">
+          <h3>Results:</h3>
+          <div id="result-text"></div>
+          <button id="nextRoundBtn">Next Round</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
