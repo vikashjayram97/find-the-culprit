@@ -1,93 +1,115 @@
 const socket = io();
 
-const joinScreen = document.getElementById("join-screen");
-const gameArea = document.getElementById("game-area");
-const usernameInput = document.getElementById("username");
-const joinBtn = document.getElementById("joinBtn");
+let roomCode = null;
+let myId = null;
+let isHost = false;
 
-const wordDisplay = document.getElementById("word-display");
-const descSection = document.getElementById("description-section");
-const descInput = document.getElementById("description");
-const submitDescBtn = document.getElementById("submitDescBtn");
-const allDescs = document.getElementById("all-descriptions");
-const descList = document.getElementById("descriptions-list");
+// UI helpers
+function hideAll() {
+  document.querySelectorAll("div").forEach((d) => d.classList.add("hidden"));
+}
+function goHome() {
+  hideAll();
+  document.getElementById("home").classList.remove("hidden");
+}
+function showCreateRoom() {
+  hideAll();
+  document.getElementById("createRoom").classList.remove("hidden");
+}
+function showJoinRoom() {
+  hideAll();
+  document.getElementById("joinRoom").classList.remove("hidden");
+}
 
-const votingSection = document.getElementById("voting-section");
-const playersList = document.getElementById("players-list");
-const skipVoteBtn = document.getElementById("skipVoteBtn");
+function createRoom() {
+  const hostName = document.getElementById("hostName").value;
+  const playerCount = parseInt(document.getElementById("playerCount").value);
+  roomCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+  isHost = true;
+  socket.emit("createRoom", { roomCode, hostName, playerCount });
+  document.getElementById("roomCodeDisplay").innerText = roomCode;
+  hideAll();
+  document.getElementById("lobby").classList.remove("hidden");
+}
 
-const results = document.getElementById("results");
-const resultText = document.getElementById("result-text");
-const nextRoundBtn = document.getElementById("nextRoundBtn");
+function joinRoom() {
+  const joinName = document.getElementById("joinName").value;
+  roomCode = document.getElementById("roomCodeJoin").value;
+  socket.emit("joinRoom", { roomCode, playerName: joinName });
+  document.getElementById("roomCodeDisplay").innerText = roomCode;
+  hideAll();
+  document.getElementById("lobby").classList.remove("hidden");
+}
 
-let playerName = "";
-
-// Join Game
-joinBtn.addEventListener("click", () => {
-  playerName = usernameInput.value.trim();
-  if (playerName) {
-    socket.emit("joinGame", playerName);
-    joinScreen.classList.add("hidden");
-    gameArea.classList.remove("hidden");
-  }
+socket.on("lobbyUpdate", (players) => {
+  const list = document.getElementById("playerList");
+  list.innerHTML = "";
+  Object.values(players).forEach((p) => {
+    const li = document.createElement("li");
+    li.innerText = p.name + (p.isHost ? " (Host)" : "");
+    list.appendChild(li);
+  });
+  if (isHost) document.getElementById("startBtn").classList.remove("hidden");
 });
 
-// Receive Word
-socket.on("yourWord", (word) => {
-  wordDisplay.textContent = "Your Word: " + word;
-  descSection.classList.remove("hidden");
+function startGame() {
+  socket.emit("startGame", roomCode);
+}
+
+socket.on("wordAssignment", ({ word, isCulprit }) => {
+  hideAll();
+  document.getElementById("game").classList.remove("hidden");
+  document.getElementById("yourWord").innerText = `Your word: ${word}`;
 });
 
-// Submit Description
-submitDescBtn.addEventListener("click", () => {
-  const desc = descInput.value.trim();
-  if (desc) {
-    socket.emit("submitDescription", desc);
-    descInput.value = "";
-    descSection.classList.add("hidden");
-  }
+socket.on("roundUpdate", ({ round, max }) => {
+  document.getElementById(
+    "roundDisplay"
+  ).innerText = `Round ${round} of ${max}`;
+  document.getElementById("descriptions").classList.add("hidden");
+  document.getElementById("voting").classList.add("hidden");
 });
 
-// Show all descriptions
+function submitDescription() {
+  const desc = document.getElementById("descInput").value;
+  socket.emit("submitDescription", { roomCode, description: desc });
+  document.getElementById("descInput").value = "";
+}
+
 socket.on("showDescriptions", (descs) => {
-  allDescs.classList.remove("hidden");
-  descList.innerHTML = "";
+  const box = document.getElementById("descriptions");
+  box.innerHTML = "<h3>Descriptions</h3>";
   descs.forEach((d) => {
-    const div = document.createElement("div");
-    div.classList.add("message");
-    div.textContent = `${d.player}: ${d.text}`;
-    descList.appendChild(div);
+    const p = document.createElement("p");
+    p.innerText = `${d.player}: ${d.text}`;
+    box.appendChild(p);
   });
-});
+  box.classList.remove("hidden");
 
-// Voting
-socket.on("startVoting", (players) => {
-  votingSection.classList.remove("hidden");
-  playersList.innerHTML = "";
-  players.forEach((p) => {
+  const voteDiv = document.getElementById("voting");
+  voteDiv.innerHTML = "<h3>Vote</h3>";
+  descs.forEach((d) => {
     const btn = document.createElement("button");
-    btn.classList.add("vote-btn");
-    btn.textContent = p;
-    btn.onclick = () => {
-      socket.emit("vote", p);
-      votingSection.classList.add("hidden");
-    };
-    playersList.appendChild(btn);
+    btn.innerText = `Accuse ${d.player}`;
+    btn.onclick = () =>
+      socket.emit("submitVote", {
+        roomCode,
+        suspectId: d.playerId,
+        skip: false,
+      });
+    voteDiv.appendChild(btn);
   });
+  const skipBtn = document.createElement("button");
+  skipBtn.innerText = "Skip Vote";
+  skipBtn.onclick = () => socket.emit("submitVote", { roomCode, skip: true });
+  voteDiv.appendChild(skipBtn);
+
+  voteDiv.classList.remove("hidden");
 });
 
-skipVoteBtn.addEventListener("click", () => {
-  socket.emit("skipVote");
-  votingSection.classList.add("hidden");
-});
-
-// Show results
-socket.on("showResults", (text) => {
-  results.classList.remove("hidden");
-  resultText.textContent = text;
-});
-
-nextRoundBtn.addEventListener("click", () => {
-  socket.emit("nextRound");
-  results.classList.add("hidden");
+socket.on("gameOver", ({ winner, reason }) => {
+  document.getElementById("winner").innerText = `${winner} win! (${reason})`;
+  document.getElementById("winner").classList.remove("hidden");
+  document.getElementById("descriptions").classList.add("hidden");
+  document.getElementById("voting").classList.add("hidden");
 });

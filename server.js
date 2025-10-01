@@ -1,132 +1,182 @@
-const path = require("path");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Serve static files from "public"
 app.use(express.static(path.join(__dirname, "public")));
 
-// Serve index.html for "/"
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+const PORT = process.env.PORT || 3000;
 
-// Word bank: [real word, hint word]
+// --- Word Bank ---
 const wordBank = [
-  ["Apple", "Fruit"],
-  ["Tiger", "Big Cat"],
-  ["Football", "Sport"],
-  ["Doctor", "Hospital"],
-  ["Pizza", "Cheese"],
-  ["Library", "Books"],
-  ["River", "Water"],
-  ["Elephant", "Big Animal"],
-  ["Guitar", "Music"],
-  ["Plane", "Travel"],
+  { word: "Tiger", hint: "Wild Cat" },
+  { word: "Apple", hint: "Keeps doctor away" },
+  { word: "Football", hint: "Round game" },
+  { word: "Sun", hint: "Gives light" },
+  { word: "School", hint: "Place to learn" },
 ];
 
-let players = [];
-let culprit = null;
-let currentWord = null;
-let descriptions = [];
-let votes = {};
+let rooms = {};
 
-// Assign random words
-function assignWords() {
-  const randomPair = wordBank[Math.floor(Math.random() * wordBank.length)];
-  currentWord = randomPair[0];
-  const hintWord = randomPair[1];
-
-  culprit = players[Math.floor(Math.random() * players.length)];
-
-  players.forEach((player) => {
-    if (player.id === culprit.id) {
-      io.to(player.id).emit("yourWord", hintWord + " (Hint)");
-    } else {
-      io.to(player.id).emit("yourWord", currentWord);
-    }
-  });
-
-  descriptions = [];
-  votes = {};
-}
-
-// Handle connections
 io.on("connection", (socket) => {
   console.log("A user connected:", socket.id);
 
-  socket.on("joinGame", (name) => {
-    players.push({ id: socket.id, name });
-    console.log(`${name} joined`);
-    if (players.length >= 3) {
-      // start when 3+ players
-      assignWords();
-    }
+  // Host creates a room
+  socket.on("createRoom", ({ roomCode, hostName, playerCount }) => {
+    rooms[roomCode] = {
+      host: socket.id,
+      players: {},
+      round: 0,
+      maxRounds: 4,
+      culpritId: null,
+      word: null,
+      hint: null,
+      descriptions: [],
+      votes: {},
+      playerCount: playerCount,
+    };
+
+    rooms[roomCode].players[socket.id] = { name: hostName, isHost: true };
+    socket.join(roomCode);
+
+    io.to(roomCode).emit("lobbyUpdate", rooms[roomCode].players);
   });
 
-  socket.on("submitDescription", (desc) => {
-    const player = players.find((p) => p.id === socket.id);
-    if (player) {
-      descriptions.push({ player: player.name, text: desc });
+  // Player joins room
+  socket.on("joinRoom", ({ roomCode, playerName }) => {
+    if (!rooms[roomCode]) {
+      socket.emit("errorMsg", "Room does not exist.");
+      return;
     }
 
-    if (descriptions.length === players.length) {
-      io.emit("showDescriptions", descriptions);
-      io.emit(
-        "startVoting",
-        players.map((p) => p.name)
+    rooms[roomCode].players[socket.id] = { name: playerName, isHost: false };
+    socket.join(roomCode);
+
+    io.to(roomCode).emit("lobbyUpdate", rooms[roomCode].players);
+  });
+
+  // Host starts the game
+  socket.on("startGame", (roomCode) => {
+    let room = rooms[roomCode];
+    if (!room) return;
+
+    const randomPair = wordBank[Math.floor(Math.random() * wordBank.length)];
+    room.word = randomPair.word;
+    room.hint = randomPair.hint;
+
+    const playerIds = Object.keys(room.players);
+    const culpritIndex = Math.floor(Math.random() * playerIds.length);
+    room.culpritId = playerIds[culpritIndex];
+    room.round = 1;
+
+    playerIds.forEach((pid) => {
+      if (pid === room.culpritId) {
+        io.to(pid).emit("wordAssignment", { word: room.hint, isCulprit: true });
+      } else {
+        io.to(pid).emit("wordAssignment", {
+          word: room.word,
+          isCulprit: false,
+        });
+      }
+    });
+
+    io.to(roomCode).emit("roundUpdate", {
+      round: room.round,
+      max: room.maxRounds,
+    });
+  });
+
+  // Player submits description
+  socket.on("submitDescription", ({ roomCode, description }) => {
+    let room = rooms[roomCode];
+    if (!room) return;
+
+    room.descriptions.push({ playerId: socket.id, text: description });
+
+    if (room.descriptions.length === Object.keys(room.players).length) {
+      io.to(roomCode).emit(
+        "showDescriptions",
+        room.descriptions.map((d) => ({
+          player: room.players[d.playerId].name,
+          text: d.text,
+        }))
       );
     }
   });
 
-  socket.on("vote", (votedName) => {
-    const voter = players.find((p) => p.id === socket.id);
-    if (voter) {
-      votes[voter.name] = votedName;
+  // Voting phase
+  socket.on("submitVote", ({ roomCode, suspectId, skip }) => {
+    let room = rooms[roomCode];
+    if (!room) return;
+
+    if (skip) {
+      room.votes[socket.id] = "skip";
+    } else {
+      room.votes[socket.id] = suspectId;
     }
 
-    if (Object.keys(votes).length === players.length) {
-      let counts = {};
-      Object.values(votes).forEach((v) => {
-        counts[v] = (counts[v] || 0) + 1;
+    if (Object.keys(room.votes).length === Object.keys(room.players).length) {
+      // Process votes
+      let voteCounts = {};
+      Object.values(room.votes).forEach((v) => {
+        if (v !== "skip") voteCounts[v] = (voteCounts[v] || 0) + 1;
       });
 
-      let accused = Object.keys(counts).reduce((a, b) =>
-        counts[a] > counts[b] ? a : b
+      let accused = Object.keys(voteCounts).reduce(
+        (a, b) => (voteCounts[a] > voteCounts[b] ? a : b),
+        null
       );
 
-      if (accused === culprit.name) {
-        io.emit(
-          "showResults",
-          `🎉 The Culprit was ${culprit.name}. Others WIN!`
-        );
+      if (accused) {
+        if (accused === room.culpritId) {
+          io.to(roomCode).emit("gameOver", {
+            winner: "Innocents",
+            reason: "Culprit caught!",
+          });
+        } else {
+          io.to(roomCode).emit("gameOver", {
+            winner: "Culprit",
+            reason: "Innocent accused!",
+          });
+        }
+        delete rooms[roomCode];
       } else {
-        io.emit(
-          "showResults",
-          `😈 ${culprit.name} was the Culprit. Innocent ${accused} got accused → Culprit WINS!`
-        );
+        // No one accused → next round
+        room.round++;
+        room.descriptions = [];
+        room.votes = {};
+
+        if (room.round > room.maxRounds) {
+          io.to(roomCode).emit("gameOver", {
+            winner: "Culprit",
+            reason: "Survived all rounds!",
+          });
+          delete rooms[roomCode];
+        } else {
+          io.to(roomCode).emit("roundUpdate", {
+            round: room.round,
+            max: room.maxRounds,
+          });
+        }
       }
     }
   });
 
-  socket.on("skipVote", () => {
-    io.emit("showResults", "⏭️ Voting skipped. Next round begins.");
-  });
-
-  socket.on("nextRound", () => {
-    assignWords();
-  });
-
   socket.on("disconnect", () => {
-    players = players.filter((p) => p.id !== socket.id);
-    console.log("A user disconnected:", socket.id);
+    console.log("User disconnected:", socket.id);
+    for (let roomCode in rooms) {
+      if (rooms[roomCode].players[socket.id]) {
+        delete rooms[roomCode].players[socket.id];
+        io.to(roomCode).emit("lobbyUpdate", rooms[roomCode].players);
+      }
+    }
   });
 });
 
-server.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
-});
+server.listen(PORT, () =>
+  console.log(`Server running on http://localhost:${PORT}`)
+);

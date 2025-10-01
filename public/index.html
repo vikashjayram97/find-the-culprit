@@ -2,49 +2,50 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Find the Culprit</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Find the Culprit</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div class="container">
+    <div id="home">
       <h1>Find the Culprit 🎭</h1>
+      <button onclick="showCreateRoom()">Create Room</button>
+      <button onclick="showJoinRoom()">Join Room</button>
+    </div>
 
-      <!-- Join Screen -->
-      <div id="join-screen">
-        <input type="text" id="username" placeholder="Enter your name" />
-        <button id="joinBtn">Join Game</button>
-      </div>
+    <div id="createRoom" class="hidden">
+      <h2>Create Room</h2>
+      <input id="hostName" placeholder="Your Name" />
+      <input id="playerCount" type="number" placeholder="Player Count" />
+      <button onclick="createRoom()">Create</button>
+      <button onclick="goHome()">Back</button>
+    </div>
 
-      <!-- Game Screen -->
-      <div id="game-area" class="hidden">
-        <h2 id="word-display">Waiting for game to start...</h2>
+    <div id="joinRoom" class="hidden">
+      <h2>Join Room</h2>
+      <input id="joinName" placeholder="Your Name" />
+      <input id="roomCodeJoin" placeholder="Room Code" />
+      <button onclick="joinRoom()">Join</button>
+      <button onclick="goHome()">Back</button>
+    </div>
 
-        <div id="description-section" class="hidden">
-          <textarea
-            id="description"
-            placeholder="Enter your description"
-          ></textarea>
-          <button id="submitDescBtn">Submit</button>
-        </div>
+    <div id="lobby" class="hidden">
+      <h2>Lobby</h2>
+      <p>Room Code: <span id="roomCodeDisplay"></span></p>
+      <ul id="playerList"></ul>
+      <button id="startBtn" onclick="startGame()" class="hidden">
+        Start Game
+      </button>
+    </div>
 
-        <div id="all-descriptions" class="hidden">
-          <h3>Players' Descriptions:</h3>
-          <div id="descriptions-list"></div>
-        </div>
-
-        <div id="voting-section" class="hidden">
-          <h3>Vote the Culprit:</h3>
-          <div id="players-list"></div>
-          <button class="skip-btn" id="skipVoteBtn">Skip Vote</button>
-        </div>
-
-        <div id="results" class="hidden">
-          <h3>Results:</h3>
-          <div id="result-text"></div>
-          <button id="nextRoundBtn">Next Round</button>
-        </div>
-      </div>
+    <div id="game" class="hidden">
+      <h2 id="roundDisplay"></h2>
+      <p id="yourWord"></p>
+      <input id="descInput" placeholder="Enter description..." />
+      <button onclick="submitDescription()">Submit</button>
+      <div id="descriptions" class="hidden"></div>
+      <div id="voting" class="hidden"></div>
+      <p id="winner" class="hidden"></p>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
