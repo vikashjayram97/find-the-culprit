@@ -59,7 +59,13 @@ function startGame() {
 socket.on("wordAssignment", ({ word, isCulprit }) => {
   hideAll();
   document.getElementById("game").classList.remove("hidden");
-  document.getElementById("yourWord").innerText = `Your word: ${word}`;
+  const wordElem = document.getElementById("yourWord");
+
+  if (isCulprit) {
+    wordElem.innerText = `Your word (Hint): ${word}\n⚠ You are the culprit! Play smart and don't get caught!`;
+  } else {
+    wordElem.innerText = `Your word: ${word}`;
+  }
 });
 
 socket.on("roundUpdate", ({ round, max }) => {
